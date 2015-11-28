@@ -6,38 +6,71 @@ from astropy.io import fits
 from astropy.io import ascii
 from scipy.interpolate import interp1d
 
-def plotspec(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0):
+def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0,do_cont=True,do_cont_chips=False,cont_ord=5):
+    # read the linelist
+    linelist=ascii.read(linefile)
+
     # read the FITS file
     hdulist=fits.open(file)
     wave=hdulist[4].data+xshift
     flux=hdulist[1].data
-    bwave=wave[2].tolist()
-    gwave=wave[1].tolist()
-    rwave=wave[0].tolist()
-    allwave=np.array(bwave+gwave+rwave)
-    bflux=flux[2].tolist()
-    gflux=flux[1].tolist()
-    rflux=flux[0].tolist()
-    allflux=np.array(bflux+gflux+rflux)
+
     # get some header values
     objid=hdulist[0].header['objid']
     snr=str(hdulist[0].header['snr'])
     mjd=str(hdulist[0].header['mjd5'])
     exptime=str(hdulist[0].header['exptime'])
 
-    # read the linelist
-    linelist=ascii.read(linefile)
-    
+    # get single arrays of wavelength and flux values, ordered properly
+    rw=np.array(wave[0]); rw=rw[::-1]; rw=rw.tolist(); rf=flux[0]; rf=rf[::-1]; rf=rf.tolist()
+    gw=np.array(wave[1]); gw=gw[::-1]; gw=gw.tolist(); gf=flux[1]; gf=gf[::-1]; gf=gf.tolist()
+    bw=np.array(wave[2]); bw=bw[::-1]; bw=bw.tolist(); bf=flux[2]; bf=bf[::-1]; bf=bf.tolist()
+    allwave=np.array(bw+gw+rw); allflux=np.array(bf+gf+rf)
+
+    # option to normalize the spectrum
+    if do_cont is True:
+        # option to normalize the chips sepately
+        if do_cont_chips is True:
+            bw=np.array(bw); bf=np.array(bf)
+            coeff=np.polyfit(bw,bf,cont_ord)
+            poly=np.poly1d(coeff)
+            cont=poly(bw)
+            bf=bf/cont
+            bf=bf.tolist()
+
+            gw=np.array(gw); gf=np.array(gf)
+            coeff=np.polyfit(gw,gf,cont_ord)
+            poly=np.poly1d(coeff)
+            cont=poly(gw)
+            gf=gf/cont
+            gf=gf.tolist()
+
+            rw=np.array(rw); rf=np.array(rf)
+            coeff=np.polyfit(rw,rf,cont_ord)
+            poly=np.poly1d(coeff)
+            cont=poly(rw)
+            rf=rf/cont
+            rf=rf.tolist()
+
+            allflux=np.array(bf+gf+rf)
+        # else normalize the whole thing at once
+        else:
+            coeff=np.polyfit(allwave,allflux,cont_ord)
+            poly=np.poly1d(coeff)
+            cont=poly(allwave)
+            allflux=allflux/cont
+
     # make the plot
     fig=plt.figure(figsize=(18,9))
     matplotlib.rcParams.update({'font.size': 16, 'font.family':'serif'})
     ax=fig.add_subplot(111)
-    plt.plot(bwave,bflux,color='black')
-    plt.plot(gwave,gflux,color='black')
-    plt.plot(rwave,rflux,color='black')
+    plt.plot(allwave,allflux,color='black')
     plt.xlim([15135,16965])
     plt.xlabel(r'Observed Wavelength [$\AA$]')
     plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{2}$ $\AA$]')
+    label=file+'    '+objid+'    S/N='+snr+'    exptime='+exptime+' s'
+    plt.text(0.5,0.95,label,transform=ax.transAxes,ha='center',fontsize=12)
+    plt.tight_layout()
 
     # option to mark airglow lines
     if mark_sky is True:
@@ -57,15 +90,10 @@ def plotspec(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=
             arrowlen=(max(allflux)-min(allflux))*(-0.05)
             arrowheadL=(max(allflux)-min(allflux))*(0.01)
             ax.arrow(line,arrowstart,0,arrowlen,head_width=4,head_length=arrowheadL,color='green')
-            txty=np.mean(allflux[sec])+((max(allflux)-min(allflux))*0.11)
             lab=gdlines['LABEL'][i]
             sec=np.where(abs(allwave-line)<0.5)
-            poo=arrowstart+(max(allflux)-min(allflux))*(0.05)
-            ax.text(line,poo,lab.replace("_"," "),rotation=90,ha='center',va='center',fontsize=12)
-
-    label=file+'    '+objid+'    S/N='+snr+'    exptime='+exptime+' s'
-    plt.text(0.5,0.95,label,transform=ax.transAxes,ha='right',fontsize=12)
-    plt.tight_layout()
+            txty=arrowstart+(max(allflux)-min(allflux))*(0.02)
+            ax.text(line,txty,lab.replace("_"," "),rotation=90,ha='center',va='bottom',fontsize=9)
 
     # define a key press event
     def on_key(event):
@@ -91,10 +119,12 @@ def plotspec(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=
             print str(xdata)+r'....No lines within 10 $\AA$'
         else:
             print str(xdata)+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
-
     cid=fig.canvas.mpl_connect('key_press_event',on_key)
 
     hdulist.close()
 
-    return
+    return arrowstart
+
+
+
 
