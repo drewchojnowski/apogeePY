@@ -68,8 +68,7 @@ def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0
     plt.xlim([15135,16965])
     plt.xlabel(r'Observed Wavelength [$\AA$]')
     plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{2}$ $\AA$]')
-    label=file+'    '+objid+'    S/N='+snr+'    exptime='+exptime+' s'
-    plt.text(0.5,0.95,label,transform=ax.transAxes,ha='center',fontsize=12)
+    plt.title(file+'    '+objid+'    S/N='+snr+'    exptime='+exptime+' s')
     plt.tight_layout()
 
     # option to mark airglow lines
@@ -77,7 +76,12 @@ def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0
         bd=np.where(linelist['LABEL']=='airglow')
         bdlines=linelist[bd]
         for i in range(len(bdlines)):
-            ax.axvline(bdlines['CENT'][i]+xshift,color='red')
+            pos=bdlines['CENT'][i]+xshift
+            sec=np.where(allwave>(pos-2))
+            wtmp=allwave[sec]; ftmp=allflux[sec]
+            sec=np.where(wtmp<(pos+2))
+            wtmp=wtmp[sec]; ftmp=ftmp[sec]
+            plt.plot(wtmp,ftmp,color='red')
 
     # option to mark stellar lines
     if mark_lines is True:
@@ -85,15 +89,21 @@ def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0
         gdlines=linelist[gd]
         for i in range(len(gdlines)):
             line=gdlines['CENT'][i]
+            lab=gdlines['LABEL'][i]
+            if lab[0:1]=='H': labcol='blue'
+            if lab[0:1]!='H': labcol='green'
             sec=np.where(abs(allwave-line)<0.5)
             arrowstart=np.mean(allflux[sec])+((max(allflux)-min(allflux))*0.10)
             arrowlen=(max(allflux)-min(allflux))*(-0.05)
             arrowheadL=(max(allflux)-min(allflux))*(0.01)
-            ax.arrow(line,arrowstart,0,arrowlen,head_width=4,head_length=arrowheadL,color='green')
-            lab=gdlines['LABEL'][i]
             sec=np.where(abs(allwave-line)<0.5)
-            txty=arrowstart+(max(allflux)-min(allflux))*(0.02)
-            ax.text(line,txty,lab.replace("_"," "),rotation=90,ha='center',va='bottom',fontsize=9)
+            txty=arrowstart+(max(allflux)-min(allflux))*(0.015)
+            if do_cont is True and txty<1: 
+                ax.arrow(line,1.09,0,-0.05,head_width=3,head_length=arrowheadL,color=labcol)
+                ax.text(line,1.1,lab.replace("_"," "),rotation=90,ha='center',va='bottom',fontsize=9,color=labcol)
+            else:
+                ax.arrow(line,arrowstart,0,arrowlen,head_width=3,head_length=arrowheadL,color=labcol)
+                ax.text(line,txty,lab.replace("_"," "),rotation=90,ha='center',va='bottom',fontsize=9,color=labcol)
 
     # define a key press event
     def on_key(event):
