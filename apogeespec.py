@@ -123,7 +123,7 @@ def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0
 
     hdulist.close()
 
-    return arrowstart
+    return
 
 
 
