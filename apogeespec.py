@@ -120,20 +120,22 @@ def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0
         x=np.where(dist==min(dist))
         z=x[0].astype('int')
         rest=linelist['CENT'][z]
-        rest_str=str(rest[0])
+        rest_str="%0.3f" % rest[0]
         dif=rest[0]-xdata
         dif_str="%0.3f" % dif
-        closeline=linelist['LABEL'][z].tostring()
+        closeline=linelist['LABEL'][z][0].tolist()
 
         if abs(dif) > 8:
-            print str(xdata)+r'....No lines within 10 $\AA$'
+            print(xdata_str+r'....No lines within 10 $\AA$')
         else:
-            print str(xdata)+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
+            bla=xdata_str+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
+            print(bla)
+
     cid=fig.canvas.mpl_connect('key_press_event',on_key)
 
     hdulist.close()
 
-    return
+    return linelist['LABEL']
 
 
 
