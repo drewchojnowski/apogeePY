@@ -6,26 +6,36 @@ from astropy.io import fits
 from astropy.io import ascii
 from scipy.interpolate import interp1d
 
-def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0,do_cont=True,do_cont_chips=False,cont_ord=5):
-    # read the linelist
-    linelist=ascii.read(linefile)
-
+def apload(file):
     # read the FITS file
     hdulist=fits.open(file)
-    wave=hdulist[4].data+xshift
+    wave=hdulist[4].data
     flux=hdulist[1].data
-
-    # get some header values
-    objid=hdulist[0].header['objid']
-    snr=str(hdulist[0].header['snr'])
-    mjd=str(hdulist[0].header['mjd5'])
-    exptime=str(hdulist[0].header['exptime'])
 
     # get single arrays of wavelength and flux values, ordered properly
     rw=np.array(wave[0]); rw=rw[::-1]; rw=rw.tolist(); rf=flux[0]; rf=rf[::-1]; rf=rf.tolist()
     gw=np.array(wave[1]); gw=gw[::-1]; gw=gw.tolist(); gf=flux[1]; gf=gf[::-1]; gf=gf.tolist()
     bw=np.array(wave[2]); bw=bw[::-1]; bw=bw.tolist(); bf=flux[2]; bf=bf[::-1]; bf=bf.tolist()
     allwave=np.array(bw+gw+rw); allflux=np.array(bf+gf+rf)
+
+    return allwave,allflux
+
+def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,
+    xshift=0.0,do_cont=True,do_cont_chips=False,cont_ord=5):
+
+    # read the linelist
+    linelist=ascii.read(linefile)
+
+    # get the wavelength and flux arrays
+    wave,flux=apload(file)
+    wave=wave+xshift
+
+    # get some header values from the FITS file
+    hdulist=fits.open(file)
+    objid=hdulist[0].header['objid']
+    snr=str(hdulist[0].header['snr'])
+    mjd=str(hdulist[0].header['mjd5'])
+    exptime=str(hdulist[0].header['exptime'])
 
     # option to normalize the spectrum
     if do_cont is True:
@@ -52,22 +62,22 @@ def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0
             rf=rf/cont
             rf=rf.tolist()
 
-            allflux=np.array(bf+gf+rf)
+            wave=np.array(bf+gf+rf)
         # else normalize the whole thing at once
         else:
-            coeff=np.polyfit(allwave,allflux,cont_ord)
+            coeff=np.polyfit(wave,flux,cont_ord)
             poly=np.poly1d(coeff)
-            cont=poly(allwave)
-            allflux=allflux/cont
+            cont=poly(wave)
+            flux=flux/cont
 
     # make the plot
     fig=plt.figure(figsize=(18,9))
     matplotlib.rcParams.update({'font.size': 16, 'font.family':'serif'})
     ax=fig.add_subplot(111)
-    plt.plot(allwave,allflux,color='black')
+    plt.plot(wave,flux,color='black')
     plt.xlim([15135,16965])
     plt.xlabel(r'Observed Wavelength [$\AA$]')
-    plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{2}$ $\AA$]')
+    plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
     plt.title(file+'    '+objid+'    S/N='+snr+'    exptime='+exptime+' s')
     plt.tight_layout()
 
@@ -77,8 +87,8 @@ def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0
         bdlines=linelist[bd]
         for i in range(len(bdlines)):
             pos=bdlines['CENT'][i]+xshift
-            sec=np.where(allwave>(pos-2))
-            wtmp=allwave[sec]; ftmp=allflux[sec]
+            sec=np.where(wave>(pos-2))
+            wtmp=wave[sec]; ftmp=flux[sec]
             sec=np.where(wtmp<(pos+2))
             wtmp=wtmp[sec]; ftmp=ftmp[sec]
             plt.plot(wtmp,ftmp,color='red')
@@ -92,12 +102,12 @@ def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0
             lab=gdlines['LABEL'][i]
             if lab[0:1]=='H': labcol='blue'
             if lab[0:1]!='H': labcol='green'
-            sec=np.where(abs(allwave-line)<0.5)
-            arrowstart=np.mean(allflux[sec])+((max(allflux)-min(allflux))*0.10)
-            arrowlen=(max(allflux)-min(allflux))*(-0.05)
-            arrowheadL=(max(allflux)-min(allflux))*(0.01)
-            sec=np.where(abs(allwave-line)<0.5)
-            txty=arrowstart+(max(allflux)-min(allflux))*(0.015)
+            sec=np.where(abs(wave-line)<0.5)
+            arrowstart=np.mean(flux[sec])+((max(flux)-min(flux))*0.10)
+            arrowlen=(max(flux)-min(flux))*(-0.05)
+            arrowheadL=(max(flux)-min(flux))*(0.01)
+            sec=np.where(abs(wave-line)<0.5)
+            txty=arrowstart+(max(flux)-min(flux))*(0.015)
             if do_cont is True and txty<1: 
                 ax.arrow(line,1.09,0,-0.05,head_width=3,head_length=arrowheadL,color=labcol)
                 ax.text(line,1.1,lab.replace("_"," "),rotation=90,ha='center',va='bottom',fontsize=9,color=labcol)
@@ -135,8 +145,4 @@ def splot(file,linefile='linelist.dat',mark_sky=False,mark_lines=True,xshift=0.0
 
     hdulist.close()
 
-    return linelist['LABEL']
-
-
-
-
+    return
