@@ -5,11 +5,45 @@ APOGEESPEC
 
 Basic tools for dealing with APOGEE spectra of emission line stars.
 Written by Drew Chojnowski, 12/2015
+
+List of procedures:
+
+1. APLOAD: takes an apVisit spectrum and loads the wavelength and flux arrays
+           for the blue (left), green (middle), and red (right) detectors
+           into single array properly-ordered arrays.
+
+2. GET_STAR_SPECLIST: given a 2MASS or ABE ID, parses the spectra directory
+           for associated apVisits and returns a list of them.
+
+3. APCONTINUUM: apVisit continuum removal.
+    3a. NORMALIZE_SPECTRUM: generic interactive continuum normalization. User 
+               selects continuum points, program fits splines to the points.
+
+    3b. COMBINE_NORMALIZED_CHIPS: finds apVisit*_normB, apVisit*_normG, and
+               apVisit*_normR and combines them into a single normalized
+               spectrum file.
+
+4. APCONT_STAR: do continuum removal for all spectra pertaining to a star in
+               the catalog file (specify by ABE ID).
+
+5. APSPLOT: IRAF_SPLOT-like routine. Plots the spectrum and allows some user
+               interaction, e.g. hit 'x' to print to terminal the nearest 
+               linelist line to the cursor position.
+
+6. APSPLOTM: IRAF_SPECPLOT-like routine. Plots multiple spectra; user can 
+               specify separation.
+
+7. BROWSER: Plots quantities (e.g. RA vs DEC or J-K vs H) pertaining to stars
+               in 'catalog.dat'. Clicking a point in the plot calls APSPLOT,
+               and plots the highest signal-to-noise spectrum available.
+
 ---------------------------------------------------------------------------
 ---------------------------------------------------------------------------
 '''
 specdir='../spectra/'
+normspecdir='../normspec/'
 linefile='linelist.dat'
+airglowfile='combine_airglow_linelists.txt'
 starcatalog='catalog.dat'
 
 '''
@@ -20,6 +54,7 @@ APLOAD: load the apVisit wave & flux into a single array
 def apload(file):
     import numpy as np
     from astropy.io import fits
+
     # read the FITS file
     hdulist=fits.open(file)
     wave=hdulist[4].data
@@ -37,6 +72,39 @@ def apload(file):
 
     return allwave,allflux
 
+
+'''
+---------------------------------------------------------------------------
+GET_STAR_SPECLIST: multiple spectrum plotting program
+---------------------------------------------------------------------------
+'''
+def get_star_speclist(star=None,abe=None,normspec=False):
+    import glob
+    from pyfits import getheader
+    import numpy as np
+
+    if normspec is False: gdir=specdir
+    if normspec is True: gdir=normspecdir
+    allspectra=np.array(glob.glob(gdir+'*apV*fits'))
+    nspec=len(allspectra)
+
+    stars_all=[]; 
+    for i in range(nspec):
+        head=getheader(allspectra[i],0)
+        stars_all.append(head['objid'])
+
+    if abe is None:
+        gd=np.where(stars_all==star)
+        spectra=allspectra[gd]
+    else:
+        p=np.where(abeID==abe)
+        tm=tmassID[p]
+        gd=np.where(stars_all==tm)
+        spectra=allspectra[gd]
+
+    return spectra
+
+
 '''
 ---------------------------------------------------------------------------
 BROWSER: interactive plot (button press calls apsplot)
@@ -49,6 +117,7 @@ def browser(quantities=None):
     from mpl_toolkits.axes_grid1 import make_axes_locatable
     from astropy.io import ascii
     from astropy.io import fits
+    from pyfits import getheader
 
     print('gathering browser data... please wait')
 
@@ -65,15 +134,15 @@ def browser(quantities=None):
     quant1_all=np.zeros(nspec); quant2_all=np.zeros(nspec)
     snr_all=np.zeros(nspec); hmag_all=np.zeros(nspec)
     for i in range(nspec):
-        hdulist=fits.open(spectra[i])
-        stars_all.append(hdulist[0].header['objid'])
+        head=getheader(spectra[i])
+        stars_all.append(head['objid'])
         if quantities[0]=='J-K':
-            quant1_all[i]=hdulist[0].header['J']-hdulist[0].header['K']
+            quant1_all[i]=head['J']-head['K']
         else:
-            quant1_all[i]=hdulist[0].header[quantities[0]]
-        quant2_all[i]=hdulist[0].header[quantities[1]]
-        snr_all[i]=hdulist[0].header['snr']
-        hmag_all[i]=hdulist[0].header['h']
+            quant1_all[i]=head[quantities[0]]
+        quant2_all[i]=head[quantities[1]]
+        snr_all[i]=head['snr']
+        hmag_all[i]=head['h']
 
     stars_all=np.array(stars_all)
     stars,indices=np.unique(stars_all,return_index=True)
@@ -82,7 +151,7 @@ def browser(quantities=None):
     quant2=quant2_all[indices]
     hmag=hmag_all[indices]
 
-    fig, ax = plt.subplots(figsize=(12,7))
+    fig, ax = plt.subplots(figsize=(12,8))
     ax.set_title('click on point to show highest S/N spectrum')
     line,=ax.plot(quant1,quant2,'w.',picker=5,markersize=0.1,linewidth=0)  # 5 points tolerance
     plt.xlabel(quantities[0]);  plt.ylabel(quantities[1])
@@ -96,7 +165,7 @@ def browser(quantities=None):
     cbar=plt.colorbar(scat,cax=cax)
     cbar.set_label('H mag')
 
-    offset=((max(quant2)-min(quant2))*0.05)
+    offset=((max(quant2)-min(quant2))*0.025)
     for i in range(nstars):
         p=np.where(stars[i]==tmassID)
         ax.text(quant1[i],quant2[i]+offset,abeID[p][0],fontsize=9,ha='center')
@@ -122,31 +191,241 @@ def browser(quantities=None):
     return
 
 
-
-def apcompare(files):
-    for i in range(len(files)):
-        x=apsplot(files[i])
-
-    return
-
 '''
 ---------------------------------------------------------------------------
-APSPLOT: spectrum plotting program
+APSPLOTM: multiple spectrum plotting program
 ---------------------------------------------------------------------------
 '''
-def apsplot(file,mark_sky=False,mark_lines=True,xshift=0.0):
+def apsplotm(star=None,abeid=None,usenorm=True):
+    import glob
+    import os
     import matplotlib.pyplot as plt
     import numpy as np
     import matplotlib
     from astropy.io import ascii
     from astropy.io import fits
+    from pyfits import getheader
+
+    startable=ascii.read(starcatalog)
+    abeID=np.array(startable['ID'])
+    tmassID=np.array(startable['2MASS'])
+
+    if abeid is None:
+        pID=star; sID='none'
+    else:
+        p=np.where(abeID==abeid)
+        pID=tmassID[p]; sID=abeid
+
+    test1=get_star_speclist(star=pID)
+    test2=get_star_speclist(star=pID,normspec=True)
+    if usenorm is True: 
+        if len(test1)>len(test2):
+            print("some of the apVisits haven't been normalized... defaulting to originals")
+            spectra=test1
+            usingnorm=False
+        else:
+            print("all apVisits have been normalized... using them")
+            spectra=test2
+            usingnorm=True
+    else:
+        print("usenorm is false, so defaulting to originals")
+        spectra=test1
+        usingnorm=False
+    nspec=len(spectra)
+
+    print('**************************************************')
+    print('APSPLOTM KEY PRESS OPTIONS:')
+    print('**************************************************')
+    print('"r":     redraw the plot to default')
+    print('"x":     print the nearest line in the linelist')
+    print('"1-5":   increase the separation between spectra')
+    print('**************************************************')
+
+    global sep
+    sep=0.0
+
+    hjd=np.zeros(nspec); hjd_str=[]
+    snr=np.zeros(nspec)
+    flux_min=np.zeros(nspec); flux_max=np.zeros(nspec)
+    flux_lev=np.zeros(nspec)
+    pmf=[]
+    for i in range(nspec):
+        hdulist=fits.open(spectra[i])
+        head=hdulist[0].header
+        hjd[i]=head['hjd']
+        hjd_str.append(str(hjd[i])[:5])
+        snr[i]=head['snr']
+        if usingnorm is False:
+            wave,flux=apload(spectra[i])
+        else:
+            wave=hdulist[1].data
+            flux=hdulist[2].data
+        flux_min[i]=np.min(flux)
+        flux_max[i]=np.max(flux)
+        wave_max=np.max(wave)
+        sec=np.where((wave>16950) & (wave<wave_max))
+        flux_lev[i]=np.mean(flux[sec])
+
+        tmp=os.path.split(spectra[i])
+        tmp=tmp[len(tmp)-1]
+        tmp=tmp.rsplit('-')
+        pmf.append(tmp[2]+'-'+tmp[3]+'-'+tmp[4][:3])
+    pmf=np.array(pmf)
+    hjd_str=np.array(hjd_str)
+    order=hjd_str.argsort()
+    spectra=spectra[order]
+    hjd=hjd[order]
+    hjd_str=hjd_str[order]
+    snr=snr[order]
+    pmf=pmf[order]
+
+    maxflux=np.max(flux_max)
+    minflux=np.min(flux_min)
+    span=(maxflux+minflux)
+
+    fig=plt.figure(figsize=(14,8))
+    fig.canvas.set_window_title('2MASS ID = '+pID[0]+',    ABE ID = '+sID+',    nvisits = '+str(nspec)+' ')
+    matplotlib.rcParams.update({'font.size': 14, 'font.family':'serif'})
+    ax = plt.gca()
+    ax.grid(True)
+
+    ax.set_xlim([15130,16965])
+#    plt.xlabel(r'Observed Wavelength [$\AA$]')
+#    plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
+
+    def plotspectra(norm,sep=0.0,more_sep=None):
+        if more_sep is not None: sep=span*0.01*more_sep
+        for i in range(nspec):
+            hdulist=fits.open(spectra[i])
+            if norm is False:
+                wave,flux=apload(spectra[i])
+            else:
+                wave=hdulist[1].data
+                flux=hdulist[2].data
+            hdulist.close()
+
+            p=ax.plot(wave,flux+sep*i)
+            ax.text(np.max(wave)+20,flux_lev[i]+sep*i,pmf[i],color=p[0].get_color(),ha='left',fontsize=12)
+            ax.grid(True)
+#           plt.subplots_adjust(left=0.08,bottom=0.08,right=0.89,top=0.97)
+#            plt.xlabel(r'Observed Wavelength [$\AA$]')
+#            plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
+        return 
+
+    def ontype(event):
+        global key, xdata, ydata
+        key=event.key; xdata=event.xdata; ydata=event.ydata
+
+        # when the user hits 'x': print the nearest line in linelist
+        if event.key=='x':
+            linelist=ascii.read(linefile)
+
+            xdata_str="%0.3f" % xdata
+            ydata_str="%0.3f" % ydata
+
+             # find the nearest line in the linelist
+            dist=abs(xdata-linelist['CENT'])
+            x=np.where(dist==min(dist))
+            z=x[0].astype('int')
+            rest=linelist['CENT'][z]
+            rest_str="%0.3f" % rest[0]
+            dif=rest[0]-xdata
+            dif_str="%0.3f" % dif
+            closeline=linelist['LABEL'][z][0].tolist()
+            if abs(dif) > 8:
+                print(xdata_str+r'....No lines within 10 $\AA$')
+            else:
+                bla=xdata_str+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
+                print(bla)
+        elif key=='1':
+            ax.cla()
+            xmin,xmax=ax.get_xlim()
+            ymin,ymax=ax.get_ylim()
+            plotspectra(usingnorm,more_sep=1)
+            ax.set_xlim([xmin,xmax])
+            ax.set_ylim([ymin,ymax])
+        elif key=='2':
+            ax.cla()
+            xmin,xmax=ax.get_xlim()
+            ymin,ymax=ax.get_ylim()
+            plotspectra(usingnorm,more_sep=2)
+            ax.set_xlim([xmin,xmax])
+            ax.set_ylim([ymin,ymax])
+        elif key=='3':
+            ax.cla()
+            xmin,xmax=ax.get_xlim()
+            ymin,ymax=ax.get_ylim()
+            plotspectra(usingnorm,more_sep=3)
+            ax.set_xlim([xmin,xmax])
+            ax.set_ylim([ymin,ymax])
+        elif key=='4':
+            ax.cla()
+            xmin,xmax=ax.get_xlim()
+            ymin,ymax=ax.get_ylim()
+            plotspectra(usingnorm,more_sep=4)
+            ax.set_xlim([xmin,xmax])
+            ax.set_ylim([ymin,ymax])
+        elif key=='5':
+            ax.cla()
+            xmin,xmax=ax.get_xlim()
+            ymin,ymax=ax.get_ylim()
+            plotspectra(usingnorm,more_sep=5)
+            ax.set_xlim([xmin,xmax])
+            ax.set_ylim([ymin,ymax])
+        elif key=='r':
+            shiftcount=0
+            newsep=0.0
+            sep=0.0
+            ax.cla()
+            plotspectra(usingnorm,newsep)
+            ax.set_xlim([15130,16965])
+        plt.draw()
+
+
+    plotspectra(usingnorm,sep)
+#    plt.subplots_adjust(left=0.08,bottom=0.08,right=0.89,top=0.97)
+
+    fig.canvas.mpl_connect('key_press_event',ontype)
+
+#    plt.show()
+
+    return
+
+'''
+---------------------------------------------------------------------------
+testx: multiple spectrum plotting program
+---------------------------------------------------------------------------
+'''
+def testx(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0):
+    import glob
     import os
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import matplotlib
+    from astropy.io import ascii
+    from astropy.io import fits
+    from pyfits import getheader
+    import matplotlib
+    matplotlib.use('TkAgg')
+    from numpy import arange, sin, pi
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
+    # implement the default mpl key bindings
+    from matplotlib.backend_bases import key_press_handler
+    from matplotlib.figure import Figure
+    import sys
+    if sys.version_info[0] < 3:
+        import Tkinter as Tk
+    else:
+        import tkinter as Tk
+
+    root = Tk.Tk()
+    root.wm_title("Embedding in TK")
 
     linelist=ascii.read(linefile)    # read the linelist
 
-    hdulist=fits.open(file)
+    hdulist=fits.open(infile)
     if len(hdulist)>10:
-        wave,flux=apload(file)
+        wave,flux=apload(infile)
     else:
         wave=hdulist[1].data
         flux=hdulist[2].data
@@ -155,21 +434,172 @@ def apsplot(file,mark_sky=False,mark_lines=True,xshift=0.0):
     wave=wave+xshift
 
     # get some header values from the FITS file
-    hdulist=fits.open(file)
     objid=hdulist[0].header['objid']
     snr=str(hdulist[0].header['snr'])
     mjd=str(hdulist[0].header['mjd5'])
     exptime=str(hdulist[0].header['exptime'])
 
     # make the plot
+    fig=Figure(figsize=(16,8))
+    tmp=os.path.split(infile); tmp=tmp[len(tmp)-1]
+#    fig.canvas.set_window_title('file='+tmp+',     star='+objid+',     S/N='+snr+',     exptime='+exptime+' s')
+    matplotlib.rcParams.update({'font.size': 14, 'font.family':'serif'})
+    ax=fig.add_subplot(111)
+    ax.plot(wave,flux,color='black')
+    ax.grid(True)
+    ax.set_xlim([15130,16965])
+    if len(hdulist)<10: ax.set_ylim([0.5,1.5])
+#    plt.xlabel(r'Observed Wavelength [$\AA$]')
+#    plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
+#    plt.tight_layout()
+
+    # a tk.DrawingArea
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas.show()
+    canvas.get_tk_widget().pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
+
+    toolbar = NavigationToolbar2TkAgg(canvas, root)
+    toolbar.update()
+    canvas._tkcanvas.pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
+
+    def apsplot_onclick(event):
+        # when none of the toolbar buttons is activated and the user clicks in the
+        # plot somewhere, compute the median value of the spectrum in a 10angstrom
+        # window around the x-coordinate of the clicked point. The y coordinate
+        # of the clicked point is not important. Make sure the continuum points
+        # `feel` it when it gets clicked, set the `feel-radius` (picker) to 5 points
+        toolbar=plt.get_current_fig_manager().toolbar
+        if (event.xdata>np.min(wave)) & (event.xdata<np.max(wave)):
+            if event.button==1 and toolbar.mode=='':
+                window=((event.xdata-winwidth)<=wave) & (wave<=(event.xdata+winwidth))
+                y=np.median(flux[window])
+                ax.plot(event.xdata,y,'rs',ms=10,picker=5,label='cont_pnt')
+                
+
+    def apsplot_onpick(event):
+        # when the user right clicks on a continuum point, remove it
+        if event.mouseevent.button==3:
+            if hasattr(event.artist,'get_label') and event.artist.get_label()=='cont_pnt':
+                event.artist.remove()
+
+    def ontype(event):
+        # when the user hits enter: # write a text file with x,y data
+        if event.key=='enter':
+            cont_pnt_coord = []
+            for artist in ax.get_children():
+                if hasattr(artist,'get_label') and artist.get_label()=='cont_pnt':
+                    cont_pnt_coord.append(artist.get_data())
+                elif hasattr(artist,'get_label') and artist.get_label()=='continuum':
+                    artist.remove()
+            cont_pnt_coord = np.array(cont_pnt_coord)[...,0]
+            sort_array = np.argsort(cont_pnt_coord[:,0])
+            x,y = cont_pnt_coord[sort_array].T
+            data=np.array([x,y])
+            np.savetxt('apslot_output.log',data.transpose(),fmt='%.5f')
+
+        # when the user hits 'x': print the nearest line in linelist
+        elif event.key=='x':
+            linelist=ascii.read(linefile)
+            global key, xdata, ydata
+            key=event.key
+            xdata=event.xdata; ydata=event.ydata
+            xdata_str="%0.3f" % xdata
+            ydata_str="%0.3f" % ydata
+
+             # find the nearest line in the linelist
+            dist=abs(xdata-linelist['CENT'])
+            x=np.where(dist==min(dist))
+            z=x[0].astype('int')
+            rest=linelist['CENT'][z]
+            rest_str="%0.3f" % rest[0]
+            dif=rest[0]-xdata
+            dif_str="%0.3f" % dif
+            closeline=linelist['LABEL'][z][0].tolist()
+            if abs(dif) > 8:
+                print(xdata_str+r'....No lines within 10 $\AA$')
+            else:
+                bla=xdata_str+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
+                print(bla)
+
+    fig.canvas.mpl_connect('key_press_event',ontype)
+    fig.canvas.mpl_connect('button_press_event',apsplot_onclick)
+    fig.canvas.mpl_connect('pick_event',apsplot_onpick)
+
+    def _quit():
+        root.quit()     # stops mainloop
+        root.destroy()  # this is necessary on Windows to prevent
+                        # Fatal Python Error: PyEval_RestoreThread: NULL tstate
+
+    button = Tk.Button(master=root, text='Quit', command=_quit)
+    button.pack(side=Tk.BOTTOM)
+
+    Tk.mainloop()
+    # If you put root.destroy() here, it will cause an error if
+    # the window is closed with the window manager.
+
+    return
+
+'''
+---------------------------------------------------------------------------
+APSPLOT: spectrum plotting program
+---------------------------------------------------------------------------
+'''
+def apsplot(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0,ag_cut=5000.0):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import matplotlib
+    from astropy.io import ascii
+    from astropy.io import fits
+    import os
+    import glob
+
+    def options():
+        print('\n')
+        print('*********************************************************************')
+        print('APSPLOT KEY PRESS OPTIONS:')
+        print('*********************************************************************')
+        print('           o:  redisplay the options')
+        print('           x:  print to terminal the nearest linelist entry')
+        print('           n:  display normalized spectrum in new window')
+        print('           h:  print the FITS header to terminal')
+        print('*********************************************************************')
+        print('APSPLOT BUTTON PRESS OPTIONS:')
+        print('*********************************************************************')
+        print('  left-click:  plot a square symbol at cursor position')
+        print(' right-click:  delete the square symbol')
+        print('       enter:  write to a text file the positions of square symbols')
+        print('*********************************************************************')
+        print('\n')
+
+    options()
+
+    hdulist=fits.open(infile)
+    if len(hdulist)>10:
+        wave,flux=apload(infile)
+    else:
+        wave=hdulist[1].data
+        flux=hdulist[2].data
+
+    # option to add on an xshift, in angstroms
+    wave=wave+xshift
+
+    # get some header values from the FITS file
+    hdulist=fits.open(infile)
+    head=hdulist[0].header
+    objid=head['objid']
+    snr=str(head['snr'])
+    mjd=str(head['mjd5'])
+    exptime=str(head['exptime'])
+
+    # make the plot
     fig=plt.figure(figsize=(16,8))
-    tmp=os.path.split(file); tmp=tmp[len(tmp)-1]
+    tmp=os.path.split(infile); tmp=tmp[len(tmp)-1]
     fig.canvas.set_window_title('file='+tmp+',     star='+objid+',     S/N='+snr+',     exptime='+exptime+' s')
     matplotlib.rcParams.update({'font.size': 14, 'font.family':'serif'})
     ax=fig.add_subplot(111)
     ax.plot(wave,flux,color='black')
     ax.grid(True)
-    plt.xlim([15135,16965])
+    plt.xlim([15130,16965])
     if len(hdulist)<10: plt.ylim([0.5,1.5])
     plt.xlabel(r'Observed Wavelength [$\AA$]')
     plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
@@ -177,10 +607,11 @@ def apsplot(file,mark_sky=False,mark_lines=True,xshift=0.0):
 
     # option to mark airglow lines
     if mark_sky is True:
-        bd=np.where(linelist['LABEL']=='airglow')
-        bdlines=linelist[bd]
-        for i in range(len(bdlines)):
-            pos=bdlines['CENT'][i]+xshift
+	airglow=ascii.read(airglowfile)
+	gd=np.where(airglow['EMISSION']>ag_cut)
+	airglow=airglow[gd]
+        for i in range(len(airglow)):
+            pos=airglow['WAVE'][i]+xshift
             sec=np.where(wave>(pos-2))
             wtmp=wave[sec]; ftmp=flux[sec]
             sec=np.where(wtmp<(pos+2))
@@ -189,11 +620,10 @@ def apsplot(file,mark_sky=False,mark_lines=True,xshift=0.0):
 
     # option to mark stellar lines
     if mark_lines is True:
-        gd=np.where(linelist['LABEL']!='airglow')
-        gdlines=linelist[gd]
-        for i in range(len(gdlines)):
-            line=gdlines['CENT'][i]
-            lab=gdlines['LABEL'][i]
+    	linelist=ascii.read(linefile)
+        for i in range(len(linelist)):
+            line=linelist['CENT'][i]
+            lab=linelist['LABEL'][i]
             if lab[0:1]=='H': labcol='blue'
             if lab[0:1]!='H': labcol='green'
             sec=np.where(abs(wave-line)<0.5)
@@ -210,30 +640,9 @@ def apsplot(file,mark_sky=False,mark_lines=True,xshift=0.0):
                 ax.text(line,txty,lab.replace("_"," "),rotation=90,ha='center',va='bottom',fontsize=9,color=labcol)
 
     # key press event handler: tells you the nearest spectral line
-    def apsplot_on_key(event):
-        linelist=ascii.read(linefile)
-        global key, xdata, ydata
-        key=event.key
-        xdata=event.xdata; ydata=event.ydata
-        xdata_str="%0.3f" % xdata
-        ydata_str="%0.3f" % ydata
+#    def apsplot_on_key(event):
 
-         # find the nearest line in the linelist
-        dist=abs(xdata-linelist['CENT'])
-        x=np.where(dist==min(dist))
-        z=x[0].astype('int')
-        rest=linelist['CENT'][z]
-        rest_str="%0.3f" % rest[0]
-        dif=rest[0]-xdata
-        dif_str="%0.3f" % dif
-        closeline=linelist['LABEL'][z][0].tolist()
-        if abs(dif) > 8:
-            print(xdata_str+r'....No lines within 10 $\AA$')
-        else:
-            bla=xdata_str+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
-            print(bla)
 
-    winwidth=10.0
     def apsplot_onclick(event):
         # when none of the toolbar buttons is activated and the user clicks in the
         # plot somewhere, compute the median value of the spectrum in a 10angstrom
@@ -245,7 +654,7 @@ def apsplot(file,mark_sky=False,mark_lines=True,xshift=0.0):
             if event.button==1 and toolbar.mode=='':
                 window=((event.xdata-winwidth)<=wave) & (wave<=(event.xdata+winwidth))
                 y=np.median(flux[window])
-                ax.plot(event.xdata,y,'rs',ms=10,picker=5,label='cont_pnt')
+                ax.plot(event.xdata,y,'ys',ms=10,picker=5,label='cont_pnt')
             plt.draw()
 
     def apsplot_onpick(event):
@@ -254,7 +663,72 @@ def apsplot(file,mark_sky=False,mark_lines=True,xshift=0.0):
             if hasattr(event.artist,'get_label') and event.artist.get_label()=='cont_pnt':
                 event.artist.remove()
 
-    fig.canvas.mpl_connect('key_press_event',apsplot_on_key)
+    def ontype(event):
+        # when the user hits enter: # write a text file with x,y data
+        if event.key=='enter':
+            cont_pnt_coord = []
+            for artist in ax.get_children():
+                if hasattr(artist,'get_label') and artist.get_label()=='cont_pnt':
+                    cont_pnt_coord.append(artist.get_data())
+                elif hasattr(artist,'get_label') and artist.get_label()=='continuum':
+                    artist.remove()
+            cont_pnt_coord = np.array(cont_pnt_coord)[...,0]
+            sort_array = np.argsort(cont_pnt_coord[:,0])
+            x,y = cont_pnt_coord[sort_array].T
+            data=np.array([x,y])
+            np.savetxt('apslot_output.log',data.transpose(),fmt='%.5f')
+
+        # when the user hits 'x': print the nearest line in linelist
+        elif event.key=='x':
+            linelist=ascii.read(linefile)
+            global key, xdata, ydata
+            key=event.key
+            xdata=event.xdata; ydata=event.ydata
+            xdata_str="%0.3f" % xdata
+            ydata_str="%0.3f" % ydata
+
+             # find the nearest line in the linelist
+            dist=abs(xdata-linelist['CENT'])
+            x=np.where(dist==min(dist))
+            z=x[0].astype('int')
+            rest=linelist['CENT'][z]
+            rest_str="%0.3f" % rest[0]
+            dif=rest[0]-xdata
+            dif_str="%0.3f" % dif
+            closeline=linelist['LABEL'][z][0].tolist()
+            if abs(dif) > 8:
+                print(xdata_str+r'....No lines within 10 $\AA$')
+            else:
+                bla=xdata_str+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
+                print(bla)
+
+        # when the user hits 'n': show the normalized spectrum if it exists
+        elif event.key=='n':
+            tmp=os.path.split(infile)
+            tmp=tmp[len(tmp)-1]
+            tmp1=tmp.rsplit('.fits')
+            tmp=tmp1[0]+'_norm.fits'
+            normfile=normspecdir+tmp
+            search=glob.glob(normfile)
+            if len(search)==1:
+                apsplot(normfile)
+            else:
+                print('normalized spectrum does not exist.')
+
+        # when the user hits 'x': redisplay the options
+        elif event.key=='o':
+            options()
+
+        # when the user hits 'h': print the header to terminal
+        elif event.key=='h':
+            print('\n')
+            print('header of '+infile)
+            print(head.cards)
+            print('\n')
+
+        plt.draw()
+
+    fig.canvas.mpl_connect('key_press_event',ontype)
     fig.canvas.mpl_connect('button_press_event',apsplot_onclick)
     fig.canvas.mpl_connect('pick_event',apsplot_onpick)
 
@@ -263,29 +737,90 @@ def apsplot(file,mark_sky=False,mark_lines=True,xshift=0.0):
 
     return
 
+
 '''
 ---------------------------------------------------------------------------
-APCONTINUUM: wrapper for continuum normalization (doesn't work)
+APCONT_STAR: wrapper for normalize_spectrum & combine_normalized_chips
 ---------------------------------------------------------------------------
 '''
-def apcontinuum(file):
-    run_normalize_chips(file)
-    combine_normalized_chips(file)
+def apcont_star(abeid=None,redo=True):
+    import glob
+    import os
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import matplotlib
+    from astropy.io import ascii
+    from astropy.io import fits
+    from pyfits import getheader
+    import sys
+
+    startable=ascii.read(starcatalog)
+    abeID=np.array(startable['ID'])
+    tmassID=np.array(startable['2MASS'])
+
+    if abeid is None:
+        pID=star; sID='none'
+    else:
+        p=np.where(abeID==abeid)
+        pID=tmassID[p]; sID=abeid
+
+    test1=get_star_speclist(star=pID)
+    test2=get_star_speclist(star=pID,norm=True)
+    if len(test1)==len(test2):
+        if redo is False:
+            print("all of the apVisit have been normalized. Set the redo key to overwrite them.")
+            sys.exit()
+
+    spectra=test1
+
+    for i in range(len(spectra)):
+        apcontinuum(spectra[i])
+
+    print('All apVisits for ABE-'+abeid+' have been continuum-normalized.')
 
     return
 
 '''
 ---------------------------------------------------------------------------
-COMBINE_NORMALIZED_CHIPS: combine normalized chip files into single normalized spectrum
+APCONTINUUM: wrapper for normalize_spectrum & combine_normalized_chips
 ---------------------------------------------------------------------------
 '''
-def combine_normalized_chips(file):
+def apcontinuum(infile,combine=True):
+    import numpy as np
+    from astropy.io import fits
+
+    hdulist=fits.open(infile)
+    wave=hdulist[4].data
+    flux=hdulist[1].data
+    print("Ignore the below warnings. I don't know how to suppress them.")
+    print('-'*80)
+    print('(1) continuum-normalizing the blue chip of '+infile+'...')
+    x=normalize_spectrum(np.array(wave[2]),np.array(flux[2]),infile,flabel='normB')
+    print('(2) continuum-normalizing the green chip of '+infile+'...')
+    x=normalize_spectrum(np.array(wave[1]),np.array(flux[1]),infile,flabel='normG')
+    print('(3) continuum-normalizing the red chip of '+infile+'...')
+    x=normalize_spectrum(np.array(wave[0]),np.array(flux[0]),infile,flabel='normR')
+    print('-'*80)
+
+    if combine is True: 
+        print('(4) combing the normalized chips of '+infile+'...')
+        combine_normalized_chips(infile)
+
+    return
+
+'''
+---------------------------------------------------------------------------
+COMBINE_NORMALIZED_CHIPS: combine normalized chips a into single spectrum
+---------------------------------------------------------------------------
+'''
+def combine_normalized_chips(infile):
     import numpy as np
     from astropy.io import fits
     import glob
     import time
     import pyfits
     import os
+    import sys
 
     # chip gap edges
     gap1_Bedge=15807.0
@@ -294,20 +829,24 @@ def combine_normalized_chips(file):
     gap2_Redge=16474.0
 
     # find the normalized chip files
-    chipBfile=glob.glob(file.rsplit('.fits')[0]+'_normB.fits')
-    chipGfile=glob.glob(file.rsplit('.fits')[0]+'_normG.fits')
-    chipRfile=glob.glob(file.rsplit('.fits')[0]+'_normR.fits')
-    if len(chipBfile)==0: print('normalized B chip not found!')
-    if len(chipGfile)==0: print('normalized G chip not found!')
-    if len(chipRfile)==0: print('normalized R chip not found!')
+    chipBfile=glob.glob(infile.rsplit('.fits')[0]+'_normB.fits')
+    chipGfile=glob.glob(infile.rsplit('.fits')[0]+'_normG.fits')
+    chipRfile=glob.glob(infile.rsplit('.fits')[0]+'_normR.fits')
     chips=[chipBfile,chipGfile,chipRfile]
-    if len(chips)==3: print('normalized B,G,R chips found')
+    lenchips=len(chipBfile)+len(chipGfile)+len(chipRfile)
+    if lenchips==3:
+        print('normalized B,G,R chips found')
+    else:
+        if len(chipBfile)==0: print('ERROR: normalized B chip not found!')
+        if len(chipGfile)==0: print('ERROR: normalized G chip not found!')
+        if len(chipRfile)==0: print('ERROR: normalized R chip not found!')
+        print('Program execution halted.')
+        sys.exit()
 
     # get single lists of wavelength, flux, and normalized flux
     allw=[]; allf=[]; allfn=[]
     for i in range(0,3):
         tmp=chips[i]
-        print(tmp[0])
         data=fits.open(tmp[0])
         w=np.array(data[1].data);    w=w[::-1];   w=w.tolist()
         fn=np.array(data[2].data); fn=fn[::-1]; fn=fn.tolist()
@@ -329,13 +868,13 @@ def combine_normalized_chips(file):
     allfn[gap2]=1.0
 
     # get the original apVisit header
-    orighdu=fits.open(file)
+    orighdu=fits.open(infile)
     orighead=orighdu[0].header
     origcards=orighead.cards
 
     # create the new FITS file, copying the header from the original file
     # and updating it.
-    outfile=file.rsplit('.fits')[0]+'_norm.fits'
+    outfile=infile.rsplit('.fits')[0]+'_norm.fits'
     hdu=pyfits.PrimaryHDU()
     head=hdu.header                    
     for i in range(len(origcards)):
@@ -350,40 +889,24 @@ def combine_normalized_chips(file):
         
     return 
 
-'''
----------------------------------------------------------------------------
-RUN_NORMALIZE_CHIPS: wrapper for normalize_chips
----------------------------------------------------------------------------
-'''
-def run_normalize_chips(file):
-    import numpy as np
-    from astropy.io import fits
-
-    hdulist=fits.open(file)
-    wave=hdulist[4].data
-    flux=hdulist[1].data
-    x=normalize_chips(np.array(wave[2]),np.array(flux[2]),file,flabel='normB')
-    x=normalize_chips(np.array(wave[1]),np.array(flux[1]),file,flabel='normG')
-    x=normalize_chips(np.array(wave[0]),np.array(flux[0]),file,flabel='normR')
-
-    return
 
 '''
 ---------------------------------------------------------------------------
-NORMALIZE_CHIPS: do chip-by-chip continuum normalization
+NORMALIZE_SPECTRUM: do chip-by-chip continuum normalization
 ---------------------------------------------------------------------------
 '''
-def normalize_chips(wave,flux,file,flabel=None,window=10.0):
+def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contPoints2file=False):
     from scipy.interpolate import splrep,splev
     import matplotlib.pyplot as plt
     import numpy as np
     from astropy.io import fits
     import pyfits
     import os
+    import sys
 
     continuum=None
 
-    hdulist=fits.open(file)
+    hdulist=fits.open(infile)
     objid=hdulist[0].header['objid']
     snr=str(hdulist[0].header['snr'])
     mjd=str(hdulist[0].header['mjd5'])
@@ -397,7 +920,7 @@ def normalize_chips(wave,flux,file,flabel=None,window=10.0):
     ax.grid(True)
     ax.set_xlabel(r'Wavelength')
     ax.set_ylabel(r'Flux')
-    if flabel=='normB':
+    if flabel=='normB': 
         plab='blue detector'; col='blue'
     elif flabel=='normG':
         plab='green detector'; col='green'
@@ -405,10 +928,11 @@ def normalize_chips(wave,flux,file,flabel=None,window=10.0):
         plab='red detector'; col='red'
     else:
         plab=' '; col='black'
-    tmp=os.path.split(file); tmp=tmp[len(tmp)-1]
-    fig.canvas.set_window_title('NORMALIZE_CHIPS:     file = '+tmp+',     objid = '+objid+',     S/N = '+snr+',      UT-MID = '+utmid)
+    tmp=os.path.split(infile); tmp=tmp[len(tmp)-1]
+    fig.canvas.set_window_title('NORMALIZE_SPECTRUM:     file = '+tmp+',     objid = '+objid+',     S/N = '+snr+',      UT-MID = '+utmid)
     plt.title(plab,color=col)
     plt.tight_layout()
+    fig.show()
 
     def onclick(event):
         # when none of the toolbar buttons is activated and the user clicks in the
@@ -422,6 +946,7 @@ def normalize_chips(wave,flux,file,flabel=None,window=10.0):
                 window = ((event.xdata-winwidth)<=wave) & (wave<=(event.xdata+winwidth))
                 y = np.median(flux[window])
                 ax.plot(event.xdata,y,'rs',ms=10,picker=5,label='cont_pnt')
+                ax.grid(True)
             plt.draw()
 
     def onpick(event):
@@ -448,11 +973,15 @@ def normalize_chips(wave,flux,file,flabel=None,window=10.0):
             cont_pnt_coord = np.array(cont_pnt_coord)[...,0]
             sort_array = np.argsort(cont_pnt_coord[:,0])
             x,y = cont_pnt_coord[sort_array].T
-            spline = splrep(x,y,k=2)
+            spline = splrep(x,y,k=splineord)
             global continuum
             continuum = splev(wave,spline)
             cfunc = lambda w: splev(w, spline)
             plt.plot(wave,continuum,'r-',lw=2,label='continuum')
+
+            if contPoints2file is True:
+                outfile=infile.rsplit('.fits')[0]+'_X'+flabel+'.txt'
+                np.savetxt(outfile,cont_pnt_coord,fmt='%.5f')
 
         # when the user hits 'n' and a spline-continuum is fitted, normalise the
         # spectrum
@@ -460,28 +989,29 @@ def normalize_chips(wave,flux,file,flabel=None,window=10.0):
             if continuum is not None:
                 ax.cla()
                 ax.plot(wave,flux/continuum,'k-',label='normalised')
-                ax.set_ylim([0.5,1.5])
+                ax.set_ylim([0.7,1.3])
                 ax.set_title('"w" to write to file; "r" to start over',color=col)
+                ax.grid(True)
 
         # when the user hits 'r': clear the axes and plot the original spectrum
         elif event.key=='r':
             continuum = None
             ax.cla()
             ax.plot(wave,flux,'k-')
+            ax.grid(True)
 
-        # when the user hits 'w': if the normalised spectrum exists, write it to a
-        # file.
+        # when the user hits 'w': if the normalised spectrum exists, write it to a file.
         elif event.key=='w':
             for artist in ax.get_children():
                 if hasattr(artist,'get_label') and artist.get_label()=='normalised':
-                    outfile=file.rsplit('.fits')[0]+'_'+flabel+'.fits'
+                    outfile=infile.rsplit('.fits')[0]+'_'+flabel+'.fits'
 
                     ax.cla()
                     ax.plot(wave,flux/continuum,'k-',label='normalised')
-                    ax.set_ylim([0.5,1.5])
-                    ax.set_title('file written: '+outfile,color=col)
+                    ax.set_ylim([0.7,1.3])
+                    ax.set_title('*** file written: '+outfile,color=col)
+                    ax.grid(True)
                     data=np.array(artist.get_data())
-#                    if flabel is None: flabel='_norm'
 
                     hdu=pyfits.PrimaryHDU()
                     new_hdu=pyfits.HDUList([hdu])
@@ -489,17 +1019,33 @@ def normalize_chips(wave,flux,file,flabel=None,window=10.0):
                     new_hdu.append(pyfits.ImageHDU(flux/continuum))
                     new_hdu.append(pyfits.ImageHDU(flux))
                     new_hdu.writeto(outfile,clobber=True)
-                    print('Saved to file: '+outfile)
+#                    print('Saved to file: '+outfile)
                     break
+            fig.canvas.stop_event_loop()
+
+        # if the user hits 'escape': exit the program.
+        elif event.key=='escape':
+            fig.canvas.stop_event_loop()
+            sys.exit()
+            
         plt.draw()
+
+    def mark() :
+        ''' blocking routine to wait for keypress event and return data'''
+        # start the blocking, wait indefinitely (-1) for an event
+        fig.canvas.start_event_loop(-1)
+        # once we get the event, return nothing
+        return 0
 
     fig.canvas.mpl_connect('key_press_event',ontype)
     fig.canvas.mpl_connect('button_press_event',onclick)
     fig.canvas.mpl_connect('pick_event',onpick)
 
-    return continuum
+    x=mark()
+    
+    plt.close()
 
-
+    return 
 
 
 
