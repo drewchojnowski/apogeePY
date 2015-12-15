@@ -42,9 +42,10 @@ List of procedures:
 '''
 specdir='../spectra/'
 normspecdir='../normspec/'
-linefile='linelist.dat'
-airglowfile='combine_airglow_linelists.txt'
-starcatalog='catalog.dat'
+datadir='data/'
+linefile=datadir+'linelist.dat'
+airglowfile=datadir+'combine_airglow_linelists.txt'
+starcatalog=datadir+'catalog.dat'
 
 '''
 ---------------------------------------------------------------------------
