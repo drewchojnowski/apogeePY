@@ -43,9 +43,9 @@ List of procedures:
 specdir='../spectra/'
 normspecdir='../normspec/'
 datadir='data/'
-linefile=datadir+'linelist.dat'
+linefile=datadir+'abe_linelist.dat'
 airglowfile=datadir+'combine_airglow_linelists.txt'
-starcatalog=datadir+'catalog.dat'
+starcatalog=datadir+'abe_catalog.dat'
 
 '''
 ---------------------------------------------------------------------------
@@ -79,10 +79,15 @@ def apload(file):
 GET_STAR_SPECLIST: multiple spectrum plotting program
 ---------------------------------------------------------------------------
 '''
-def get_star_speclist(star=None,abe=None,normspec=False):
+def get_star_speclist(star=None,abeid=None,normspec=False):
     import glob
     from pyfits import getheader
     import numpy as np
+    from astropy.io import ascii
+
+    startable=ascii.read(starcatalog)
+    abeID=np.array(startable['ID'])
+    tmassID=np.array(startable['2MASS'])
 
     if normspec is False: gdir=specdir
     if normspec is True: gdir=normspecdir
@@ -94,11 +99,11 @@ def get_star_speclist(star=None,abe=None,normspec=False):
         head=getheader(allspectra[i],0)
         stars_all.append(head['objid'])
 
-    if abe is None:
+    if abeid is None:
         gd=np.where(stars_all==star)
         spectra=allspectra[gd]
     else:
-        p=np.where(abeID==abe)
+        p=np.where(abeID==abeid)
         tm=tmassID[p]
         gd=np.where(stars_all==tm)
         spectra=allspectra[gd]
@@ -207,6 +212,18 @@ def apsplotm(star=None,abeid=None,usenorm=True):
     from astropy.io import fits
     from pyfits import getheader
 
+    def options():
+        print('\n')
+        print('*********************************************************************')
+        print('APSPLOTM KEY PRESS OPTIONS:')
+        print('*********************************************************************')
+        print('     o:  redisplay the options')
+        print('     r:  redraw the plot to default')
+        print('     x:  print the nearest line in the linelist')
+        print(' f1-f9:  change the separation between spectra')
+        print('*********************************************************************')
+        print('\n')
+
     startable=ascii.read(starcatalog)
     abeID=np.array(startable['ID'])
     tmassID=np.array(startable['2MASS'])
@@ -234,13 +251,7 @@ def apsplotm(star=None,abeid=None,usenorm=True):
         usingnorm=False
     nspec=len(spectra)
 
-    print('**************************************************')
-    print('APSPLOTM KEY PRESS OPTIONS:')
-    print('**************************************************')
-    print('"r":     redraw the plot to default')
-    print('"x":     print the nearest line in the linelist')
-    print('"1-5":   increase the separation between spectra')
-    print('**************************************************')
+    options()
 
     global sep
     sep=0.0
@@ -284,15 +295,17 @@ def apsplotm(star=None,abeid=None,usenorm=True):
     minflux=np.min(flux_min)
     span=(maxflux+minflux)
 
+    cmap=matplotlib.cm.gnuplot
     fig=plt.figure(figsize=(14,8))
     fig.canvas.set_window_title('2MASS ID = '+pID[0]+',    ABE ID = '+sID+',    nvisits = '+str(nspec)+' ')
+    fig.subplots_adjust(left=0.08,bottom=0.08,right=0.89,top=0.97)
     matplotlib.rcParams.update({'font.size': 14, 'font.family':'serif'})
-    ax = plt.gca()
+    ax=fig.gca()
     ax.grid(True)
 
     ax.set_xlim([15130,16965])
-#    plt.xlabel(r'Observed Wavelength [$\AA$]')
-#    plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
+    ax.set_xlabel(r'Observed Wavelength [$\AA$]')
+    ax.set_ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
 
     def plotspectra(norm,sep=0.0,more_sep=None):
         if more_sep is not None: sep=span*0.01*more_sep
@@ -305,12 +318,12 @@ def apsplotm(star=None,abeid=None,usenorm=True):
                 flux=hdulist[2].data
             hdulist.close()
 
-            p=ax.plot(wave,flux+sep*i)
+            p=ax.plot(wave,flux+sep*i,color=cmap(i/float(nspec)))
             ax.text(np.max(wave)+20,flux_lev[i]+sep*i,pmf[i],color=p[0].get_color(),ha='left',fontsize=12)
             ax.grid(True)
-#           plt.subplots_adjust(left=0.08,bottom=0.08,right=0.89,top=0.97)
-#            plt.xlabel(r'Observed Wavelength [$\AA$]')
-#            plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
+            
+            ax.set_xlabel(r'Observed Wavelength [$\AA$]')
+            ax.set_ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
         return 
 
     def ontype(event):
@@ -338,50 +351,26 @@ def apsplotm(star=None,abeid=None,usenorm=True):
             else:
                 bla=xdata_str+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
                 print(bla)
-        elif key=='1':
+        elif (len(key)==2) and (key[:1]=='f'):
             ax.cla()
+            newsep=float(key[1:])
             xmin,xmax=ax.get_xlim()
+            plotspectra(usingnorm,more_sep=newsep)
             ymin,ymax=ax.get_ylim()
-            plotspectra(usingnorm,more_sep=1)
             ax.set_xlim([xmin,xmax])
             ax.set_ylim([ymin,ymax])
-        elif key=='2':
-            ax.cla()
-            xmin,xmax=ax.get_xlim()
-            ymin,ymax=ax.get_ylim()
-            plotspectra(usingnorm,more_sep=2)
-            ax.set_xlim([xmin,xmax])
-            ax.set_ylim([ymin,ymax])
-        elif key=='3':
-            ax.cla()
-            xmin,xmax=ax.get_xlim()
-            ymin,ymax=ax.get_ylim()
-            plotspectra(usingnorm,more_sep=3)
-            ax.set_xlim([xmin,xmax])
-            ax.set_ylim([ymin,ymax])
-        elif key=='4':
-            ax.cla()
-            xmin,xmax=ax.get_xlim()
-            ymin,ymax=ax.get_ylim()
-            plotspectra(usingnorm,more_sep=4)
-            ax.set_xlim([xmin,xmax])
-            ax.set_ylim([ymin,ymax])
-        elif key=='5':
-            ax.cla()
-            xmin,xmax=ax.get_xlim()
-            ymin,ymax=ax.get_ylim()
-            plotspectra(usingnorm,more_sep=5)
-            ax.set_xlim([xmin,xmax])
-            ax.set_ylim([ymin,ymax])
+            plt.draw()
         elif key=='r':
             shiftcount=0
             newsep=0.0
             sep=0.0
             ax.cla()
-            plotspectra(usingnorm,newsep)
+            plotspectra(usingnorm,more_sep=newsep)
             ax.set_xlim([15130,16965])
-        plt.draw()
-
+            plt.draw()
+        # when the user hits 'o': redisplay the options
+        elif event.key=='o':
+            options()
 
     plotspectra(usingnorm,sep)
 #    plt.subplots_adjust(left=0.08,bottom=0.08,right=0.89,top=0.97)
@@ -394,158 +383,10 @@ def apsplotm(star=None,abeid=None,usenorm=True):
 
 '''
 ---------------------------------------------------------------------------
-testx: multiple spectrum plotting program
----------------------------------------------------------------------------
-'''
-def testx(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0):
-    import glob
-    import os
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import matplotlib
-    from astropy.io import ascii
-    from astropy.io import fits
-    from pyfits import getheader
-    import matplotlib
-    matplotlib.use('TkAgg')
-    from numpy import arange, sin, pi
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
-    # implement the default mpl key bindings
-    from matplotlib.backend_bases import key_press_handler
-    from matplotlib.figure import Figure
-    import sys
-    if sys.version_info[0] < 3:
-        import Tkinter as Tk
-    else:
-        import tkinter as Tk
-
-    root = Tk.Tk()
-    root.wm_title("Embedding in TK")
-
-    linelist=ascii.read(linefile)    # read the linelist
-
-    hdulist=fits.open(infile)
-    if len(hdulist)>10:
-        wave,flux=apload(infile)
-    else:
-        wave=hdulist[1].data
-        flux=hdulist[2].data
-
-    # option to add on an xshift, in angstroms
-    wave=wave+xshift
-
-    # get some header values from the FITS file
-    objid=hdulist[0].header['objid']
-    snr=str(hdulist[0].header['snr'])
-    mjd=str(hdulist[0].header['mjd5'])
-    exptime=str(hdulist[0].header['exptime'])
-
-    # make the plot
-    fig=Figure(figsize=(16,8))
-    tmp=os.path.split(infile); tmp=tmp[len(tmp)-1]
-#    fig.canvas.set_window_title('file='+tmp+',     star='+objid+',     S/N='+snr+',     exptime='+exptime+' s')
-    matplotlib.rcParams.update({'font.size': 14, 'font.family':'serif'})
-    ax=fig.add_subplot(111)
-    ax.plot(wave,flux,color='black')
-    ax.grid(True)
-    ax.set_xlim([15130,16965])
-    if len(hdulist)<10: ax.set_ylim([0.5,1.5])
-#    plt.xlabel(r'Observed Wavelength [$\AA$]')
-#    plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
-#    plt.tight_layout()
-
-    # a tk.DrawingArea
-    canvas = FigureCanvasTkAgg(fig, master=root)
-    canvas.show()
-    canvas.get_tk_widget().pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
-
-    toolbar = NavigationToolbar2TkAgg(canvas, root)
-    toolbar.update()
-    canvas._tkcanvas.pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
-
-    def apsplot_onclick(event):
-        # when none of the toolbar buttons is activated and the user clicks in the
-        # plot somewhere, compute the median value of the spectrum in a 10angstrom
-        # window around the x-coordinate of the clicked point. The y coordinate
-        # of the clicked point is not important. Make sure the continuum points
-        # `feel` it when it gets clicked, set the `feel-radius` (picker) to 5 points
-        toolbar=plt.get_current_fig_manager().toolbar
-        if (event.xdata>np.min(wave)) & (event.xdata<np.max(wave)):
-            if event.button==1 and toolbar.mode=='':
-                window=((event.xdata-winwidth)<=wave) & (wave<=(event.xdata+winwidth))
-                y=np.median(flux[window])
-                ax.plot(event.xdata,y,'rs',ms=10,picker=5,label='cont_pnt')
-                
-
-    def apsplot_onpick(event):
-        # when the user right clicks on a continuum point, remove it
-        if event.mouseevent.button==3:
-            if hasattr(event.artist,'get_label') and event.artist.get_label()=='cont_pnt':
-                event.artist.remove()
-
-    def ontype(event):
-        # when the user hits enter: # write a text file with x,y data
-        if event.key=='enter':
-            cont_pnt_coord = []
-            for artist in ax.get_children():
-                if hasattr(artist,'get_label') and artist.get_label()=='cont_pnt':
-                    cont_pnt_coord.append(artist.get_data())
-                elif hasattr(artist,'get_label') and artist.get_label()=='continuum':
-                    artist.remove()
-            cont_pnt_coord = np.array(cont_pnt_coord)[...,0]
-            sort_array = np.argsort(cont_pnt_coord[:,0])
-            x,y = cont_pnt_coord[sort_array].T
-            data=np.array([x,y])
-            np.savetxt('apslot_output.log',data.transpose(),fmt='%.5f')
-
-        # when the user hits 'x': print the nearest line in linelist
-        elif event.key=='x':
-            linelist=ascii.read(linefile)
-            global key, xdata, ydata
-            key=event.key
-            xdata=event.xdata; ydata=event.ydata
-            xdata_str="%0.3f" % xdata
-            ydata_str="%0.3f" % ydata
-
-             # find the nearest line in the linelist
-            dist=abs(xdata-linelist['CENT'])
-            x=np.where(dist==min(dist))
-            z=x[0].astype('int')
-            rest=linelist['CENT'][z]
-            rest_str="%0.3f" % rest[0]
-            dif=rest[0]-xdata
-            dif_str="%0.3f" % dif
-            closeline=linelist['LABEL'][z][0].tolist()
-            if abs(dif) > 8:
-                print(xdata_str+r'....No lines within 10 $\AA$')
-            else:
-                bla=xdata_str+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
-                print(bla)
-
-    fig.canvas.mpl_connect('key_press_event',ontype)
-    fig.canvas.mpl_connect('button_press_event',apsplot_onclick)
-    fig.canvas.mpl_connect('pick_event',apsplot_onpick)
-
-    def _quit():
-        root.quit()     # stops mainloop
-        root.destroy()  # this is necessary on Windows to prevent
-                        # Fatal Python Error: PyEval_RestoreThread: NULL tstate
-
-    button = Tk.Button(master=root, text='Quit', command=_quit)
-    button.pack(side=Tk.BOTTOM)
-
-    Tk.mainloop()
-    # If you put root.destroy() here, it will cause an error if
-    # the window is closed with the window manager.
-
-    return
-
-'''
----------------------------------------------------------------------------
 APSPLOT: spectrum plotting program
 ---------------------------------------------------------------------------
 '''
-def apsplot(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0,ag_cut=5000.0):
+def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,airglow_width=2.0,airglow_cut=100.0):
     import matplotlib.pyplot as plt
     import numpy as np
     import matplotlib
@@ -568,7 +409,7 @@ def apsplot(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0,ag_cut=
         print('*********************************************************************')
         print('  left-click:  plot a square symbol at cursor position')
         print(' right-click:  delete the square symbol')
-        print('       enter:  write to a text file the positions of square symbols')
+        print('       enter:  write to a text file the square symbol coordinates')
         print('*********************************************************************')
         print('\n')
 
@@ -599,25 +440,27 @@ def apsplot(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0,ag_cut=
     matplotlib.rcParams.update({'font.size': 14, 'font.family':'serif'})
     ax=fig.add_subplot(111)
     ax.plot(wave,flux,color='black')
+    ymin,ymax=ax.get_ylim()
+    if (ymax-ymin)<1.2: ax.set_ylim([0.4,1.6])
     ax.grid(True)
-    plt.xlim([15130,16965])
-    if len(hdulist)<10: plt.ylim([0.5,1.5])
-    plt.xlabel(r'Observed Wavelength [$\AA$]')
-    plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
+    ax.set_xlim([15130,16965])
+#    if len(hdulist)<10: plt.ylim([0.5,1.5])
+    ax.set_xlabel(r'Observed Wavelength [$\AA$]')
+    ax.set_ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
     plt.tight_layout()
 
     # option to mark airglow lines
-    if mark_sky is True:
+    if mark_airglow is True:
 	airglow=ascii.read(airglowfile)
-	gd=np.where(airglow['EMISSION']>ag_cut)
+	gd=np.where(airglow['EMISSION']>airglow_cut)
 	airglow=airglow[gd]
         for i in range(len(airglow)):
             pos=airglow['WAVE'][i]+xshift
-            sec=np.where(wave>(pos-2))
+            sec=np.where(wave>(pos-airglow_width/2.0))
             wtmp=wave[sec]; ftmp=flux[sec]
-            sec=np.where(wtmp<(pos+2))
+            sec=np.where(wtmp<(pos+airglow_width/2.0))
             wtmp=wtmp[sec]; ftmp=ftmp[sec]
-            plt.plot(wtmp,ftmp,color='red')
+            ax.plot(wtmp,ftmp,color='red')
 
     # option to mark stellar lines
     if mark_lines is True:
@@ -716,7 +559,7 @@ def apsplot(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0,ag_cut=
             else:
                 print('normalized spectrum does not exist.')
 
-        # when the user hits 'x': redisplay the options
+        # when the user hits 'o': redisplay the options
         elif event.key=='o':
             options()
 
@@ -727,8 +570,6 @@ def apsplot(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0,ag_cut=
             print(head.cards)
             print('\n')
 
-        plt.draw()
-
     fig.canvas.mpl_connect('key_press_event',ontype)
     fig.canvas.mpl_connect('button_press_event',apsplot_onclick)
     fig.canvas.mpl_connect('pick_event',apsplot_onpick)
@@ -736,6 +577,9 @@ def apsplot(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0,ag_cut=
     hdulist.close()
     plt.show()
 
+#    answer=raw_input('hit "q" to quit: ')
+#    if answer=='q': plt.close()
+    
     return
 
 
@@ -1047,6 +891,173 @@ def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contP
     plt.close()
 
     return 
+
+
+
+
+
+'''
+---------------------------------------------------------------------------
+testx: multiple spectrum plotting program
+---------------------------------------------------------------------------
+'''
+def testx(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0):
+    import glob
+    import os
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import matplotlib
+    from astropy.io import ascii
+    from astropy.io import fits
+    from pyfits import getheader
+    import matplotlib
+    matplotlib.use('TkAgg')
+    from numpy import arange, sin, pi
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
+    # implement the default mpl key bindings
+    from matplotlib.backend_bases import key_press_handler
+    from matplotlib.figure import Figure
+    import sys
+    if sys.version_info[0] < 3:
+        import Tkinter as Tk
+    else:
+        import tkinter as Tk
+
+    root = Tk.Tk()
+    root.wm_title("Embedding in TK")
+
+    linelist=ascii.read(linefile)    # read the linelist
+
+    hdulist=fits.open(infile)
+    if len(hdulist)>10:
+        wave,flux=apload(infile)
+    else:
+        wave=hdulist[1].data
+        flux=hdulist[2].data
+
+    # option to add on an xshift, in angstroms
+    wave=wave+xshift
+
+    # get some header values from the FITS file
+    objid=hdulist[0].header['objid']
+    snr=str(hdulist[0].header['snr'])
+    mjd=str(hdulist[0].header['mjd5'])
+    exptime=str(hdulist[0].header['exptime'])
+
+    # make the plot
+    fig=Figure(figsize=(16,8))
+    tmp=os.path.split(infile); tmp=tmp[len(tmp)-1]
+#    fig.canvas.set_window_title('file='+tmp+',     star='+objid+',     S/N='+snr+',     exptime='+exptime+' s')
+    matplotlib.rcParams.update({'font.size': 14, 'font.family':'serif'})
+    ax=fig.add_subplot(111)
+    ax.plot(wave,flux,color='black')
+    ax.grid(True)
+    ax.set_xlim([15130,16965])
+    if len(hdulist)<10: ax.set_ylim([0.5,1.5])
+#    plt.xlabel(r'Observed Wavelength [$\AA$]')
+#    plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
+#    plt.tight_layout()
+
+    # a tk.DrawingArea
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas.show()
+    canvas.get_tk_widget().pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
+
+    toolbar = NavigationToolbar2TkAgg(canvas, root)
+    toolbar.update()
+    canvas._tkcanvas.pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
+
+    def apsplot_onclick(event):
+        # when none of the toolbar buttons is activated and the user clicks in the
+        # plot somewhere, compute the median value of the spectrum in a 10angstrom
+        # window around the x-coordinate of the clicked point. The y coordinate
+        # of the clicked point is not important. Make sure the continuum points
+        # `feel` it when it gets clicked, set the `feel-radius` (picker) to 5 points
+        toolbar=plt.get_current_fig_manager().toolbar
+        if (event.xdata>np.min(wave)) & (event.xdata<np.max(wave)):
+            if event.button==1 and toolbar.mode=='':
+                window=((event.xdata-winwidth)<=wave) & (wave<=(event.xdata+winwidth))
+                y=np.median(flux[window])
+                ax.plot(event.xdata,y,'rs',ms=10,picker=5,label='cont_pnt')
+                
+
+    def apsplot_onpick(event):
+        # when the user right clicks on a continuum point, remove it
+        if event.mouseevent.button==3:
+            if hasattr(event.artist,'get_label') and event.artist.get_label()=='cont_pnt':
+                event.artist.remove()
+
+    def ontype(event):
+        # when the user hits enter: # write a text file with x,y data
+        if event.key=='enter':
+            cont_pnt_coord = []
+            for artist in ax.get_children():
+                if hasattr(artist,'get_label') and artist.get_label()=='cont_pnt':
+                    cont_pnt_coord.append(artist.get_data())
+                elif hasattr(artist,'get_label') and artist.get_label()=='continuum':
+                    artist.remove()
+            cont_pnt_coord = np.array(cont_pnt_coord)[...,0]
+            sort_array = np.argsort(cont_pnt_coord[:,0])
+            x,y = cont_pnt_coord[sort_array].T
+            data=np.array([x,y])
+            np.savetxt('apslot_output.log',data.transpose(),fmt='%.5f')
+
+        # when the user hits 'x': print the nearest line in linelist
+        elif event.key=='x':
+            linelist=ascii.read(linefile)
+            global key, xdata, ydata
+            key=event.key
+            xdata=event.xdata; ydata=event.ydata
+            xdata_str="%0.3f" % xdata
+            ydata_str="%0.3f" % ydata
+
+             # find the nearest line in the linelist
+            dist=abs(xdata-linelist['CENT'])
+            x=np.where(dist==min(dist))
+            z=x[0].astype('int')
+            rest=linelist['CENT'][z]
+            rest_str="%0.3f" % rest[0]
+            dif=rest[0]-xdata
+            dif_str="%0.3f" % dif
+            closeline=linelist['LABEL'][z][0].tolist()
+            if abs(dif) > 8:
+                print(xdata_str+r'....No lines within 10 $\AA$')
+            else:
+                bla=xdata_str+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
+                print(bla)
+
+    fig.canvas.mpl_connect('key_press_event',ontype)
+    fig.canvas.mpl_connect('button_press_event',apsplot_onclick)
+    fig.canvas.mpl_connect('pick_event',apsplot_onpick)
+
+    def _quit():
+        root.quit()     # stops mainloop
+        root.destroy()  # this is necessary on Windows to prevent
+                        # Fatal Python Error: PyEval_RestoreThread: NULL tstate
+
+    button = Tk.Button(master=root, text='Quit', command=_quit)
+    button.pack(side=Tk.BOTTOM)
+
+    Tk.mainloop()
+    # If you put root.destroy() here, it will cause an error if
+    # the window is closed with the window manager.
+
+    return
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
