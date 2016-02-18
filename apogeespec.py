@@ -446,7 +446,8 @@ def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,air
     ax.set_xlim([15130,16965])
 #    if len(hdulist)<10: plt.ylim([0.5,1.5])
     ax.set_xlabel(r'Observed Wavelength [$\AA$]')
-    ax.set_ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
+#    ax.set_ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA^{-1}$]')
+    ax.set_ylabel(r'Flux')
     plt.tight_layout()
 
     # option to mark airglow lines
@@ -648,7 +649,7 @@ def apcontinuum(infile,combine=True):
     print('-'*80)
 
     if combine is True: 
-        print('(4) combing the normalized chips of '+infile+'...')
+        print('(4) combining the normalized chips of '+infile+'...')
         combine_normalized_chips(infile)
 
     return
@@ -834,7 +835,7 @@ def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contP
             if continuum is not None:
                 ax.cla()
                 ax.plot(wave,flux/continuum,'k-',label='normalised')
-                ax.set_ylim([0.7,1.3])
+#                ax.set_ylim([0.7,1.3])
                 ax.set_title('"w" to write to file; "r" to start over',color=col)
                 ax.grid(True)
 
@@ -853,7 +854,7 @@ def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contP
 
                     ax.cla()
                     ax.plot(wave,flux/continuum,'k-',label='normalised')
-                    ax.set_ylim([0.7,1.3])
+#                    ax.set_ylim([0.7,1.3])
                     ax.set_title('*** file written: '+outfile,color=col)
                     ax.grid(True)
                     data=np.array(artist.get_data())
@@ -891,173 +892,6 @@ def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contP
     plt.close()
 
     return 
-
-
-
-
-
-'''
----------------------------------------------------------------------------
-testx: multiple spectrum plotting program
----------------------------------------------------------------------------
-'''
-def testx(infile,mark_sky=True,mark_lines=True,xshift=0.0,winwidth=1.0):
-    import glob
-    import os
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import matplotlib
-    from astropy.io import ascii
-    from astropy.io import fits
-    from pyfits import getheader
-    import matplotlib
-    matplotlib.use('TkAgg')
-    from numpy import arange, sin, pi
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
-    # implement the default mpl key bindings
-    from matplotlib.backend_bases import key_press_handler
-    from matplotlib.figure import Figure
-    import sys
-    if sys.version_info[0] < 3:
-        import Tkinter as Tk
-    else:
-        import tkinter as Tk
-
-    root = Tk.Tk()
-    root.wm_title("Embedding in TK")
-
-    linelist=ascii.read(linefile)    # read the linelist
-
-    hdulist=fits.open(infile)
-    if len(hdulist)>10:
-        wave,flux=apload(infile)
-    else:
-        wave=hdulist[1].data
-        flux=hdulist[2].data
-
-    # option to add on an xshift, in angstroms
-    wave=wave+xshift
-
-    # get some header values from the FITS file
-    objid=hdulist[0].header['objid']
-    snr=str(hdulist[0].header['snr'])
-    mjd=str(hdulist[0].header['mjd5'])
-    exptime=str(hdulist[0].header['exptime'])
-
-    # make the plot
-    fig=Figure(figsize=(16,8))
-    tmp=os.path.split(infile); tmp=tmp[len(tmp)-1]
-#    fig.canvas.set_window_title('file='+tmp+',     star='+objid+',     S/N='+snr+',     exptime='+exptime+' s')
-    matplotlib.rcParams.update({'font.size': 14, 'font.family':'serif'})
-    ax=fig.add_subplot(111)
-    ax.plot(wave,flux,color='black')
-    ax.grid(True)
-    ax.set_xlim([15130,16965])
-    if len(hdulist)<10: ax.set_ylim([0.5,1.5])
-#    plt.xlabel(r'Observed Wavelength [$\AA$]')
-#    plt.ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA$]')
-#    plt.tight_layout()
-
-    # a tk.DrawingArea
-    canvas = FigureCanvasTkAgg(fig, master=root)
-    canvas.show()
-    canvas.get_tk_widget().pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
-
-    toolbar = NavigationToolbar2TkAgg(canvas, root)
-    toolbar.update()
-    canvas._tkcanvas.pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
-
-    def apsplot_onclick(event):
-        # when none of the toolbar buttons is activated and the user clicks in the
-        # plot somewhere, compute the median value of the spectrum in a 10angstrom
-        # window around the x-coordinate of the clicked point. The y coordinate
-        # of the clicked point is not important. Make sure the continuum points
-        # `feel` it when it gets clicked, set the `feel-radius` (picker) to 5 points
-        toolbar=plt.get_current_fig_manager().toolbar
-        if (event.xdata>np.min(wave)) & (event.xdata<np.max(wave)):
-            if event.button==1 and toolbar.mode=='':
-                window=((event.xdata-winwidth)<=wave) & (wave<=(event.xdata+winwidth))
-                y=np.median(flux[window])
-                ax.plot(event.xdata,y,'rs',ms=10,picker=5,label='cont_pnt')
-                
-
-    def apsplot_onpick(event):
-        # when the user right clicks on a continuum point, remove it
-        if event.mouseevent.button==3:
-            if hasattr(event.artist,'get_label') and event.artist.get_label()=='cont_pnt':
-                event.artist.remove()
-
-    def ontype(event):
-        # when the user hits enter: # write a text file with x,y data
-        if event.key=='enter':
-            cont_pnt_coord = []
-            for artist in ax.get_children():
-                if hasattr(artist,'get_label') and artist.get_label()=='cont_pnt':
-                    cont_pnt_coord.append(artist.get_data())
-                elif hasattr(artist,'get_label') and artist.get_label()=='continuum':
-                    artist.remove()
-            cont_pnt_coord = np.array(cont_pnt_coord)[...,0]
-            sort_array = np.argsort(cont_pnt_coord[:,0])
-            x,y = cont_pnt_coord[sort_array].T
-            data=np.array([x,y])
-            np.savetxt('apslot_output.log',data.transpose(),fmt='%.5f')
-
-        # when the user hits 'x': print the nearest line in linelist
-        elif event.key=='x':
-            linelist=ascii.read(linefile)
-            global key, xdata, ydata
-            key=event.key
-            xdata=event.xdata; ydata=event.ydata
-            xdata_str="%0.3f" % xdata
-            ydata_str="%0.3f" % ydata
-
-             # find the nearest line in the linelist
-            dist=abs(xdata-linelist['CENT'])
-            x=np.where(dist==min(dist))
-            z=x[0].astype('int')
-            rest=linelist['CENT'][z]
-            rest_str="%0.3f" % rest[0]
-            dif=rest[0]-xdata
-            dif_str="%0.3f" % dif
-            closeline=linelist['LABEL'][z][0].tolist()
-            if abs(dif) > 8:
-                print(xdata_str+r'....No lines within 10 $\AA$')
-            else:
-                bla=xdata_str+'....nearest line= '+closeline+' '+rest_str+', dif= '+dif_str+')'
-                print(bla)
-
-    fig.canvas.mpl_connect('key_press_event',ontype)
-    fig.canvas.mpl_connect('button_press_event',apsplot_onclick)
-    fig.canvas.mpl_connect('pick_event',apsplot_onpick)
-
-    def _quit():
-        root.quit()     # stops mainloop
-        root.destroy()  # this is necessary on Windows to prevent
-                        # Fatal Python Error: PyEval_RestoreThread: NULL tstate
-
-    button = Tk.Button(master=root, text='Quit', command=_quit)
-    button.pack(side=Tk.BOTTOM)
-
-    Tk.mainloop()
-    # If you put root.destroy() here, it will cause an error if
-    # the window is closed with the window manager.
-
-    return
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
