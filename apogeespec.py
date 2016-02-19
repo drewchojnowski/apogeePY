@@ -386,7 +386,7 @@ def apsplotm(star=None,abeid=None,usenorm=True):
 APSPLOT: spectrum plotting program
 ---------------------------------------------------------------------------
 '''
-def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,airglow_width=2.0,airglow_cut=100.0):
+def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,airglow_width=2.0,airglow_cut=100.0,xr=None):
     import matplotlib.pyplot as plt
     import numpy as np
     import matplotlib
@@ -436,14 +436,17 @@ def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,air
     # make the plot
     fig=plt.figure(figsize=(16,8))
     tmp=os.path.split(infile); tmp=tmp[len(tmp)-1]
-    fig.canvas.set_window_title('file='+tmp+',     star='+objid+',     S/N='+snr+',     exptime='+exptime+' s')
+    fig.canvas.set_window_title('file='+tmp+',     star='+objid+',     S/N='+snr+',     exptime='+exptime+' s,     xshift='+str(xshift))
     matplotlib.rcParams.update({'font.size': 14, 'font.family':'serif'})
     ax=fig.add_subplot(111)
     ax.plot(wave,flux,color='black')
     ymin,ymax=ax.get_ylim()
     if (ymax-ymin)<1.2: ax.set_ylim([0.4,1.6])
     ax.grid(True)
-    ax.set_xlim([15130,16965])
+    if xr is not None:
+        ax.set_xlim(xr)
+    else:
+        ax.set_xlim([15130,16965])
 #    if len(hdulist)<10: plt.ylim([0.5,1.5])
     ax.set_xlabel(r'Observed Wavelength [$\AA$]')
 #    ax.set_ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA^{-1}$]')
@@ -478,7 +481,7 @@ def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,air
             sec=np.where(abs(wave-line)<0.5)
             txty=arrowstart+(max(flux)-min(flux))*(0.015)
             if txty<1: 
-                ax.arrow(line,1.09,0,-0.05,head_width=3,head_length=arrowheadL,color=labcol)
+                ax.arrow(line,1.09,0,-0.05,head_width=2,head_length=arrowheadL,color=labcol)
                 ax.text(line,1.1,lab.replace("_"," "),rotation=90,ha='center',va='bottom',fontsize=9,color=labcol)
             else:
                 ax.arrow(line,arrowstart,0,arrowlen,head_width=3,head_length=arrowheadL,color=labcol)
@@ -635,22 +638,39 @@ def apcontinuum(infile,combine=True):
     import numpy as np
     from astropy.io import fits
 
+    print('-'*80)
+    print('APCONTINUUM OPTIONS')
+    print('-'*80)
+    print(' left-click: mark a continuum point on the continuum')
+    print('          c: mark a continuum point at cursor y-position')
+    print('right-click: delete a continuum point')
+    print('      enter: show continuum fit')
+    print('          n: apply continuum fit')
+    print('          r: start over')
+    print('          w: save continuum fit')
+    print('     escape: escape')
+    print('-'*80)
+    print("ignore the below warning message... I don't know how to suppress it")
+    print('-'*80)
+
     hdulist=fits.open(infile)
     wave=hdulist[4].data
     flux=hdulist[1].data
-    print("Ignore the below warnings. I don't know how to suppress them.")
-    print('-'*80)
-    print('(1) continuum-normalizing the blue chip of '+infile+'...')
+#    print('-'*80)
+#    print('(1) continuum-normalizing the blue chip of '+infile+'...')
     x=normalize_spectrum(np.array(wave[2]),np.array(flux[2]),infile,flabel='normB')
-    print('(2) continuum-normalizing the green chip of '+infile+'...')
+#    print('(2) continuum-normalizing the green chip of '+infile+'...')
     x=normalize_spectrum(np.array(wave[1]),np.array(flux[1]),infile,flabel='normG')
-    print('(3) continuum-normalizing the red chip of '+infile+'...')
+#    print('(3) continuum-normalizing the red chip of '+infile+'...')
     x=normalize_spectrum(np.array(wave[0]),np.array(flux[0]),infile,flabel='normR')
-    print('-'*80)
+#    print('-'*80)
 
-    if combine is True: 
-        print('(4) combining the normalized chips of '+infile+'...')
+    if combine is True:
+        print('-'*80)
+        print('combining the normalized chips of '+infile+'...')
         combine_normalized_chips(infile)
+        print('-'*80)
+        print('Done')
 
     return
 
@@ -716,6 +736,8 @@ def combine_normalized_chips(infile):
     # get the original apVisit header
     orighdu=fits.open(infile)
     orighead=orighdu[0].header
+    barycor=orighead['bc']
+    allw=allw-((barycor/299792.458)+1)
     origcards=orighead.cards
 
     # create the new FITS file, copying the header from the original file
@@ -749,6 +771,8 @@ def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contP
     import pyfits
     import os
     import sys
+
+
 
     continuum=None
 
@@ -809,6 +833,13 @@ def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contP
         # 2. sort the continuum-point-array according to the x-values
         # 3. fit a spline and evaluate it in the wavelength points
         # 4. plot the continuum
+        if event.key=='c':
+            y = event.ydata
+            ax.plot(event.xdata,y,'rs',ms=10,picker=5,label='cont_pnt')
+            ax.grid(True)
+            plt.draw()
+
+
         if event.key=='enter':
             cont_pnt_coord = []
             for artist in ax.get_children():
@@ -892,6 +923,5 @@ def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contP
     plt.close()
 
     return 
-
 
 
