@@ -642,7 +642,7 @@ def apcontinuum(infile,combine=True):
     print('APCONTINUUM OPTIONS')
     print('-'*80)
     print(' left-click: mark a continuum point on the continuum')
-    print('          c: mark a continuum point at cursor y-position')
+    print('          z: mark a continuum point at cursor y-position')
     print('right-click: delete a continuum point')
     print('      enter: show continuum fit')
     print('          n: apply continuum fit')
@@ -833,7 +833,7 @@ def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contP
         # 2. sort the continuum-point-array according to the x-values
         # 3. fit a spline and evaluate it in the wavelength points
         # 4. plot the continuum
-        if event.key=='c':
+        if event.key=='z':
             y = event.ydata
             ax.plot(event.xdata,y,'rs',ms=10,picker=5,label='cont_pnt')
             ax.grid(True)
