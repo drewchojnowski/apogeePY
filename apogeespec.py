@@ -386,7 +386,7 @@ def apsplotm(star=None,abeid=None,usenorm=True):
 APSPLOT: spectrum plotting program
 ---------------------------------------------------------------------------
 '''
-def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,airglow_width=2.0,airglow_cut=100.0,xr=None):
+def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,airglow_width=2.0,airglow_cut=100.0,xr=None,yr=None):
     import matplotlib.pyplot as plt
     import numpy as np
     import matplotlib
@@ -434,7 +434,7 @@ def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,air
     exptime=str(head['exptime'])
 
     # make the plot
-    fig=plt.figure(figsize=(16,8))
+    fig=plt.figure(figsize=(16,9))
     tmp=os.path.split(infile); tmp=tmp[len(tmp)-1]
     fig.canvas.set_window_title('file='+tmp+',     star='+objid+',     S/N='+snr+',     exptime='+exptime+' s,     xshift='+str(xshift))
     matplotlib.rcParams.update({'font.size': 14, 'font.family':'serif'})
@@ -447,8 +447,10 @@ def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,air
         ax.set_xlim(xr)
     else:
         ax.set_xlim([15130,16965])
+    if yr is not None:
+        ax.set_ylim(yr)
 #    if len(hdulist)<10: plt.ylim([0.5,1.5])
-    ax.set_xlabel(r'Observed Wavelength [$\AA$]')
+    ax.set_xlabel(r'Wavelength [$\AA$]')
 #    ax.set_ylabel(r'Flux [10$^{-17}$ erg s$^{-1}$ cm$^{-2}$ $\AA^{-1}$]')
     ax.set_ylabel(r'Flux')
     plt.tight_layout()
@@ -469,27 +471,26 @@ def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,air
     # option to mark stellar lines
     if mark_lines is True:
     	linelist=ascii.read(linefile)
+        xmin,xmax=ax.get_ylim()
+        ymin,ymax=ax.get_ylim()
         for i in range(len(linelist)):
             line=linelist['CENT'][i]
             lab=linelist['LABEL'][i]
             if lab[0:1]=='H': labcol='blue'
             if lab[0:1]!='H': labcol='green'
             sec=np.where(abs(wave-line)<0.5)
-            arrowstart=np.mean(flux[sec])+((max(flux)-min(flux))*0.10)
-            arrowlen=(max(flux)-min(flux))*(-0.05)
-            arrowheadL=(max(flux)-min(flux))*(0.01)
+            arrowstart=np.max(flux[sec])+(ymax-ymin)*0.10
+            arrowlen=(ymax-ymin)*(-0.05)
+            arrowheadL=(ymax-ymin)*(0.01)
+            arrowheadW=(xmax-xmin)*(0.3)
             sec=np.where(abs(wave-line)<0.5)
-            txty=arrowstart+(max(flux)-min(flux))*(0.015)
+            txty=arrowstart+((ymax-ymin)*(0.015))
             if txty<1: 
-                ax.arrow(line,1.09,0,-0.05,head_width=2,head_length=arrowheadL,color=labcol)
+                ax.arrow(line,1.09,0,-0.05,head_width=1.5,head_length=arrowheadL,color=labcol)
                 ax.text(line,1.1,lab.replace("_"," "),rotation=90,ha='center',va='bottom',fontsize=9,color=labcol)
             else:
-                ax.arrow(line,arrowstart,0,arrowlen,head_width=3,head_length=arrowheadL,color=labcol)
+                ax.arrow(line,arrowstart,0,arrowlen,head_width=1.5,head_length=arrowheadL,color=labcol)
                 ax.text(line,txty,lab.replace("_"," "),rotation=90,ha='center',va='bottom',fontsize=9,color=labcol)
-
-    # key press event handler: tells you the nearest spectral line
-#    def apsplot_on_key(event):
-
 
     def apsplot_onclick(event):
         # when none of the toolbar buttons is activated and the user clicks in the
@@ -866,7 +867,6 @@ def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contP
             if continuum is not None:
                 ax.cla()
                 ax.plot(wave,flux/continuum,'k-',label='normalised')
-#                ax.set_ylim([0.7,1.3])
                 ax.set_title('"w" to write to file; "r" to start over',color=col)
                 ax.grid(True)
 
@@ -885,7 +885,6 @@ def normalize_spectrum(wave,flux,infile,flabel=None,window=7.0,splineord=3,contP
 
                     ax.cla()
                     ax.plot(wave,flux/continuum,'k-',label='normalised')
-#                    ax.set_ylim([0.7,1.3])
                     ax.set_title('*** file written: '+outfile,color=col)
                     ax.grid(True)
                     data=np.array(artist.get_data())
