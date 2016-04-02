@@ -432,6 +432,7 @@ def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,air
     snr=str(head['snr'])
     mjd=str(head['mjd5'])
     exptime=str(head['exptime'])
+    barycor=head['BC']
 
     # make the plot
     fig=plt.figure(figsize=(16,9))
@@ -461,7 +462,7 @@ def apsplot(infile,mark_airglow=True,mark_lines=True,xshift=0.0,winwidth=1.0,air
 	gd=np.where(airglow['EMISSION']>airglow_cut)
 	airglow=airglow[gd]
         for i in range(len(airglow)):
-            pos=airglow['WAVE'][i]+xshift
+            pos=airglow['WAVE'][i]+xshift-((barycor/299792.458)+1)
             sec=np.where(wave>(pos-airglow_width/2.0))
             wtmp=wave[sec]; ftmp=flux[sec]
             sec=np.where(wtmp<(pos+airglow_width/2.0))
@@ -737,6 +738,7 @@ def combine_normalized_chips(infile):
     # get the original apVisit header
     orighdu=fits.open(infile)
     orighead=orighdu[0].header
+    # apply barycentric correction
     barycor=orighead['bc']
     allw=allw-((barycor/299792.458)+1)
     origcards=orighead.cards
