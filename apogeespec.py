@@ -68,17 +68,6 @@ def apload(file):
     allwave = allwave[::-1]
     allflux = allflux[::-1]
 
-
-    # get single arrays of wavelength and flux values, ordered properly
-    rw=np.array(wave[0]); rw=rw[::-1]; rw=rw.tolist()
-    rf=flux[0]; rf=rf[::-1]; rf=rf.tolist()
-    gw=np.array(wave[1]); gw=gw[::-1]; gw=gw.tolist()
-    gf=flux[1]; gf=gf[::-1]; gf=gf.tolist()
-    bw=np.array(wave[2]); bw=bw[::-1]; bw=bw.tolist()
-    bf=flux[2]; bf=bf[::-1]; bf=bf.tolist()
-
-    allwave=np.array(bw+gw+rw); allflux=np.array(bf+gf+rf)
-
     return allwave,allflux
 
 
